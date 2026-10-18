@@ -5,8 +5,8 @@ that return structured output instead of prose.
 
 ## What an axi tool is
 
-An axi tool is a command-line program written to be driven by an agent rather
-than read by a person. The convention, as the shipped tools follow it:
+An axi tool is a command-line program designed to be driven by an agent.
+The proposed [v0 contract](docs/axi-contract.md) makes these principles concrete:
 
 - **Structured output by default.** Records over paragraphs, with a `--json`
   escape hatch where a caller needs exact types.
@@ -17,9 +17,10 @@ than read by a person. The convention, as the shipped tools follow it:
 - **Data, not advice.** A tool reports what is true. Deciding what to do about it
   belongs to the caller.
 
-## The tools that already exist
+## Independent references
 
-These ship independently on npm, each versioned on its own:
+These names are prior references for the idea, maintained outside this repository.
+Their availability, behavior, and conformance to v0 have not been verified here.
 
 | Tool | What it reports on |
 |---|---|
@@ -29,12 +30,24 @@ These ship independently on npm, each versioned on its own:
 | `lavish-axi` | Rich HTML artifacts turned into human review surfaces |
 | `chrome-devtools-axi` | A Chrome browser session |
 
-## Status
+## Purpose and local roadmap
 
-**This repository is a starting point.** The tools above live in their own
-packages; nothing has been moved here and no structure has been chosen yet.
-Whether axify becomes an umbrella for those packages, a template for writing new
-ones, or the written-down convention itself is an open question.
+**Axify is a convention plus starter repository.** It documents the convention,
+then will demonstrate it with a small offline reference CLI and a standalone
+starter. Independent tools remain in their current homes.
+
+1. **W1 — proposed convention v0:** [invocation, wire formats, errors, bounds,
+   and six exact examples](docs/axi-contract.md). This checkout is documentation
+   only; the commands in that document are future acceptance targets.
+2. **W2–W4 — offline reference:** implement discovery and a nonrecursive local
+   directory inventory, add validation and bounds, then an offline regression
+   suite and copy/paste demo. Provisional entry point:
+   `node examples/fs-axi/bin/fs-axi.js`.
+3. **W5 — starter:** copy the proven pattern into a standalone local template.
+4. **W6 — narrow conformance checks:** check the reference and starter against
+   v0 fixtures offline; this will not certify independent packages.
+
+No CLI, package, runtime test suite, or conformance checker ships in W1.
 
 ## License
 
