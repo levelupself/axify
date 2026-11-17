@@ -79,3 +79,124 @@ test('empty inventory has typed zero counts', (t) => {
     source, limit: 50, total: 0, returned: 0, truncated: false, entries: [],
   });
 });
+
+test('bounds count every immediate name but return only the sorted prefix', (t) => {
+  const source = fixture(t);
+  for (let i = 504; i >= 0; i--) fs.writeFileSync(path.join(source, `item-${String(i).padStart(3, '0')}`), '');
+  for (const limit of [undefined, 1, 500]) {
+    const result = run(['list', source, ...(limit ? ['--limit', String(limit)] : []), '--json']);
+    assert.equal(result.status, 0);
+    const data = JSON.parse(result.stdout).data;
+    assert.equal(data.limit, limit ?? 50);
+    assert.equal(data.total, 505);
+    assert.equal(data.returned, limit ?? 50);
+    assert.equal(data.truncated, true);
+    assert.equal(data.entries.length, limit ?? 50);
+    assert.equal(data.entries[0].name, 'item-000');
+    assert.equal(data.entries.at(-1).name, `item-${String((limit ?? 50) - 1).padStart(3, '0')}`);
+  }
+});
+
+// Parse the public compact grammar without splitting strings on spaces or '='.
+function compact(stdout) {
+  return stdout.trimEnd().split('\n').map((line) => {
+    const name = /^[a-z][a-z0-9_]*/.exec(line)[0];
+    let rest = line.slice(name.length);
+    const fields = {};
+    while (rest) {
+      const match = /^ ([a-z][a-z0-9_]*)=("(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-f]{4}))*"|null|true|false|-?(?:0|[1-9][0-9]*))/.exec(rest);
+      assert.ok(match, `Invalid compact field: ${rest}`);
+      assert.ok(!Object.hasOwn(fields, match[1]));
+      fields[match[1]] = JSON.parse(match[2]);
+      rest = rest.slice(match[0].length);
+    }
+    return { name, fields };
+  });
+}
+
+test('filenames round-trip in both modes and sort by UTF-8 bytes', (t) => {
+  const source = fixture(t);
+  const names = ['.hidden', 'a', 'Z', 'é', '雪', '😀', 'line\nnext\t\\雪,|=:', 'notes = "x".txt', '\b\f\r\u0001'];
+  for (const name of names) fs.writeFileSync(path.join(source, name), '雪');
+  const json = run(['list', source, '--json']);
+  const data = JSON.parse(json.stdout).data;
+  const expected = names.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+    .map((name) => ({ name, type: 'file', bytes: 3 }));
+  assert.deepEqual(data.entries, expected);
+  const text = run(['list', source]);
+  assert.deepEqual(compact(text.stdout).slice(2).map((row) => row.fields), expected);
+  assert.deepEqual(compact(text.stdout)[1].fields, {
+    source, limit: 50, total: names.length, returned: names.length, truncated: false,
+  });
+  assert.equal(text.stdout, run(['list', source]).stdout);
+  assert.equal(json.stdout, run(['list', source, '--json']).stdout);
+});
+
+function expectError(args, code, status, target, command = 'list', options) {
+  const result = run(args, options);
+  assert.equal(result.status, status);
+  const messages = {
+    E_USAGE: 'Invalid arguments', E_NOT_FOUND: 'Directory not found',
+    E_NOT_DIRECTORY: 'Input is not a directory', E_READ: 'Directory inventory unavailable',
+    E_ENCODING: 'Input is not valid Unicode', E_CAPACITY: 'Response capacity exceeded',
+    E_INTERNAL: 'Internal failure',
+  };
+  const error = { code, message: messages[code], target };
+  if (result.stdout.startsWith('{')) assert.deepEqual(JSON.parse(result.stdout), {
+    v: 0, tool: 'fs-axi', command, ok: false, data: null, error,
+  });
+  else assert.deepEqual(compact(result.stdout), [
+    { name: 'axi', fields: { v: 0, tool: 'fs-axi', command, ok: false } },
+    { name: 'error', fields: error },
+  ]);
+}
+
+test('invalid limits and malformed invocations have bounded usage errors in both modes', () => {
+  for (const json of [[], ['--json']]) {
+    for (const value of ['0', '501', '-1', '01', ' 1', '1.5', '1e2', '', '9'.repeat(1000)]) {
+      expectError(['list', 'missing', '--limit', value, ...json], 'E_USAGE', 2, '--limit');
+    }
+    for (const args of [['list'], ['list', 'a', 'b'], ['list', '--wat'], ['list', 'a', '--help', 'b'], ['list', '', '--help']]) {
+      // Path validation is unnecessary for a valid discovery request.
+      if (args.includes('')) continue;
+      expectError([...args, ...json], 'E_USAGE', 2, null);
+    }
+    expectError(['list', '--limit', ...json], 'E_USAGE', 2, '--limit');
+    expectError(['list', 'x', '--limit', '1', '--limit', '2', ...json], 'E_USAGE', 2, '--limit');
+    expectError(['unknown', ...json], 'E_USAGE', 2, null, 'invalid');
+    expectError(['--wat', ...json], 'E_USAGE', 2, null, 'invalid');
+    expectError(['--limit', '1', ...json], 'E_USAGE', 2, '--limit', 'discover');
+  }
+  expectError(['list', 'x', '--json', '--json'], 'E_USAGE', 2, null);
+  expectError(['list', 'x', '--help', '--help'], 'E_USAGE', 2, null);
+  expectError(['list', 'x', '--wat', '--limit', '0', '--json'], 'E_USAGE', 2, null);
+  expectError(['list', 'x', '--limit', '0', '--wat', '--json'], 'E_USAGE', 2, '--limit');
+  expectError(['list', 'x', '--limit', '--help', '--json'], 'E_USAGE', 2, '--limit');
+});
+
+test('interspersed options and -- preserve explicit directory operands', (t) => {
+  const root = fixture(t);
+  for (const name of ['--json', '-dash', 'list']) fs.mkdirSync(path.join(root, name));
+  for (const args of [
+    ['--json', 'list', '--limit', '1', '--', '-dash'],
+    ['list', '--json', '--', '--json'], ['--json', 'list', 'list'],
+  ]) {
+    const result = run(args, { cwd: root });
+    assert.equal(result.status, 0);
+    assert.equal(JSON.parse(result.stdout).data.source, path.resolve(root, args.at(-1)));
+  }
+  assert.equal(run(['list', '--', '--json'], { cwd: root }).stdout.startsWith('axi '), true);
+  assert.equal(run(['--help', 'list', '--json']).status, 0);
+});
+
+test('missing, nondirectory, symlink, empty and overlong inputs fail without partial data', (t) => {
+  const root = fixture(t);
+  fs.writeFileSync(path.join(root, 'file'), '');
+  fs.symlinkSync(root, path.join(root, 'link'), 'dir');
+  for (const json of [[], ['--json']]) {
+    expectError(['list', path.join(root, 'absent'), ...json], 'E_NOT_FOUND', 3, path.join(root, 'absent'));
+    for (const name of ['file', 'link']) expectError(['list', path.join(root, name), ...json], 'E_NOT_DIRECTORY', 3, path.join(root, name));
+    expectError(['list', '', ...json], 'E_USAGE', 2, null);
+    expectError(['list', 'x'.repeat(4097), ...json], 'E_USAGE', 2, null);
+  }
+});
