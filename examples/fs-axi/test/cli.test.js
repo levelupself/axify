@@ -7,8 +7,9 @@ const { spawnSync } = require('node:child_process');
 
 const cli = path.resolve(__dirname, '../bin/fs-axi.js');
 function run(args = [], options = {}) {
-  const result = spawnSync(process.execPath, [cli, ...args], {
-    encoding: 'utf8', timeout: 10000, maxBuffer: 2 * 1024 * 1024, ...options,
+  const { nodeArgs = [], ...spawnOptions } = options;
+  const result = spawnSync(process.execPath, [...nodeArgs, cli, ...args], {
+    encoding: 'utf8', timeout: 10000, maxBuffer: 2 * 1024 * 1024, ...spawnOptions,
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null);
@@ -156,9 +157,7 @@ test('invalid limits and malformed invocations have bounded usage errors in both
     for (const value of ['0', '501', '-1', '01', ' 1', '1.5', '1e2', '', '9'.repeat(1000)]) {
       expectError(['list', 'missing', '--limit', value, ...json], 'E_USAGE', 2, '--limit');
     }
-    for (const args of [['list'], ['list', 'a', 'b'], ['list', '--wat'], ['list', 'a', '--help', 'b'], ['list', '', '--help']]) {
-      // Path validation is unnecessary for a valid discovery request.
-      if (args.includes('')) continue;
+    for (const args of [['list'], ['list', 'a', 'b'], ['list', '--wat'], ['list', 'a', '--help', 'b']]) {
       expectError([...args, ...json], 'E_USAGE', 2, null);
     }
     expectError(['list', '--limit', ...json], 'E_USAGE', 2, '--limit');
@@ -172,6 +171,95 @@ test('invalid limits and malformed invocations have bounded usage errors in both
   expectError(['list', 'x', '--wat', '--limit', '0', '--json'], 'E_USAGE', 2, null);
   expectError(['list', 'x', '--limit', '0', '--wat', '--json'], 'E_USAGE', 2, '--limit');
   expectError(['list', 'x', '--limit', '--help', '--json'], 'E_USAGE', 2, '--limit');
+});
+
+function fault(root, mode) {
+  return {
+    nodeArgs: ['--require', path.join(__dirname, 'faults.cjs')],
+    env: { ...process.env, FS_AXI_TEST_ROOT: root, FS_AXI_TEST_FAULT: mode },
+  };
+}
+
+test('discovery and invalid invocations never access the filesystem', (t) => {
+  const root = fixture(t);
+  const options = fault(root, 'no-io');
+  for (const args of [[], ['--help'], ['list', '--help'], ['list', root, '--help', '--json']]) {
+    assert.equal(run(args, options).status, 0);
+  }
+  expectError(['list', root, '--limit', '0', '--json'], 'E_USAGE', 2, '--limit', 'list', options);
+});
+
+test('controlled read failures replace the entire result with E_READ', (t) => {
+  const source = fixture(t);
+  fs.writeFileSync(path.join(source, 'a'), '');
+  fs.writeFileSync(path.join(source, 'b'), '');
+  for (const json of [[], ['--json']]) {
+    for (const mode of ['initial-denied', 'enumeration-denied', 'enumeration-gone', 'selected-gone', 'selected-denied']) {
+      expectError(['list', source, ...json], 'E_READ', 3, source, 'list', fault(source, mode));
+    }
+    assert.equal(run(['list', source, '--limit', '1', ...json], fault(source, 'selected-gone')).status, 0);
+  }
+});
+
+test('all enumerated names must be valid UTF-8 even outside the selected prefix', (t) => {
+  const source = fixture(t);
+  fs.writeFileSync(path.join(source, 'a'), '');
+  // Raw POSIX names cannot be represented by a JS string. Windows lacks this interface.
+  if (process.platform === 'win32') { t.skip('raw POSIX filename bytes'); return; }
+  fs.writeFileSync(Buffer.concat([Buffer.from(source + path.sep), Buffer.from([0xff])]), '');
+  for (const json of [[], ['--json']]) expectError(['list', source, '--limit', '1', ...json], 'E_ENCODING', 3, null);
+});
+
+test('BOM and replacement-character names are valid scalars and preserved', (t) => {
+  const source = fixture(t);
+  const names = ['\ufeffname', '\ufffdname'];
+  for (const name of names) fs.writeFileSync(path.join(source, name), '');
+  const data = JSON.parse(run(['list', source, '--json']).stdout).data;
+  assert.deepEqual(data.entries.map((entry) => entry.name), names.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))));
+});
+
+test('unpaired surrogate input is E_ENCODING before filesystem access', (t) => {
+  const source = fixture(t);
+  expectError(['list', source, '--json'], 'E_ENCODING', 3, null, 'list', fault(source, 'surrogate-input'));
+});
+
+test('capacity failures cover name size, byte size, and encoded output in both modes', (t) => {
+  const source = fixture(t);
+  for (const json of [[], ['--json']]) {
+    for (const mode of ['long-name', 'unsafe-size', 'negative-size', 'response-size']) {
+      expectError(['list', source, '--limit', '500', ...json], 'E_CAPACITY', 1, null, 'list', fault(source, mode));
+    }
+  }
+});
+
+test('file sizes remain exact up to the safe integer ceiling and other types have null bytes', (t) => {
+  const source = fixture(t);
+  const result = run(['list', source, '--json'], fault(source, 'types'));
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.stdout).data.entries, [
+    { name: 'a', type: 'file', bytes: Number.MAX_SAFE_INTEGER },
+    { name: 'b', type: 'other', bytes: null },
+  ]);
+});
+
+test('a final symlink is rejected while ancestor symlinks retain the lexical source', (t) => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, 'real'));
+  fs.mkdirSync(path.join(root, 'real', 'child'));
+  fs.symlinkSync(path.join(root, 'real'), path.join(root, 'alias'), 'dir');
+  const source = path.join(root, 'alias', 'child');
+  const result = run(['list', source, '--json']);
+  assert.equal(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).data.source, source);
+  expectError(['list', path.join(root, 'alias') + path.sep, '--json'], 'E_NOT_DIRECTORY', 3, path.join(root, 'alias'));
+});
+
+test('repeated limits report the first offending token and JSON survives a missing limit value', () => {
+  expectError(['--limit', '--json', 'list', 'x'], 'E_USAGE', 2, '--limit');
+  expectError(['list', 'x', '--json', '--limit=1'], 'E_USAGE', 2, null);
+  expectError(['list', 'x', '--limit', '1', '--limit', '--json'], 'E_USAGE', 2, '--limit');
+  expectError(['list', '--help', 'x', 'extra', '--limit', '0', '--json'], 'E_USAGE', 2, null);
+  expectError(['list', '--help', '', '--json'], 'E_USAGE', 2, null);
 });
 
 test('interspersed options and -- preserve explicit directory operands', (t) => {
