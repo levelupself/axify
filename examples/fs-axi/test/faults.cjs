@@ -30,6 +30,7 @@ fs.readdirSync = function (target, options) {
     if (mode === 'enumeration-denied') denied();
     if (mode === 'enumeration-gone') denied('ENOENT');
     if (mode === 'long-name') return [Buffer.from('x'.repeat(4097))];
+    if (mode === 'unsafe-total') return { length: 9007199254740992 };
     if (['unsafe-size', 'negative-size'].includes(mode)) return [Buffer.from('a')];
     if (mode === 'types') return [Buffer.from('b'), Buffer.from('a')];
     if (mode === 'response-size') return Array.from({ length: 500 }, (_, i) => Buffer.from('x'.repeat(4090) + i));

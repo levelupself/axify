@@ -34,20 +34,85 @@ Their availability, behavior, and conformance to v0 have not been verified here.
 
 **Axify is a convention plus starter repository.** It documents the convention,
 then will demonstrate it with a small offline reference CLI and a standalone
-starter. Independent tools remain in their current homes.
+starter. The offline reference now runs locally; the standalone starter is future
+work. Independent tools remain in their current homes.
 
 1. **W1 — proposed convention v0:** [invocation, wire formats, errors, bounds,
-   and six exact examples](docs/axi-contract.md). This checkout is documentation
-   only; the commands in that document are future acceptance targets.
-2. **W2–W4 — offline reference:** implement discovery and a nonrecursive local
-   directory inventory, add validation and bounds, then an offline regression
-   suite and copy/paste demo. Provisional entry point:
-   `node examples/fs-axi/bin/fs-axi.js`.
+   and six exact examples](docs/axi-contract.md).
+2. **W2–W4 — offline reference (implemented):** discovery, a nonrecursive local
+   directory inventory, validation and bounds, an offline regression suite and
+   the demo below. Provisional local entry point: `node examples/fs-axi/bin/fs-axi.js`.
 3. **W5 — starter:** copy the proven pattern into a standalone local template.
 4. **W6 — narrow conformance checks:** check the reference and starter against
    v0 fixtures offline; this will not certify independent packages.
 
-No CLI, package, runtime test suite, or conformance checker ships in W1.
+## Run locally
+
+Requires **Node.js 22 or newer** (npm is only a convenience for the test command).
+There are no dependencies, install step, downloads, credentials, or global binary.
+Run from the repository root:
+
+```sh
+node examples/fs-axi/bin/fs-axi.js
+node examples/fs-axi/bin/fs-axi.js --help --json
+npm test
+# Equivalent without npm; test files and spawned CLIs run sequentially:
+node --test --test-concurrency=1 examples/fs-axi/test/*.test.js
+```
+
+The CLI reports immediate names, entry types and regular-file byte sizes. It
+never reads file bodies, descends into subdirectories, or follows entry symlinks.
+The directory operand itself cannot be a final-component symlink. Paths in
+output are absolute and lexically normalized, without realpath expansion.
+All names are sorted by UTF-8 bytes before selecting the first 50 (or `--limit`
+1–500). `total` counts every immediate entry, including hidden names;
+`returned` and `truncated` describe the selected prefix. Enumeration and sorting
+still need the whole name list, so this is no constant-memory or time guarantee.
+An entry disappearing during selected metadata reads fails the whole response;
+the count is an enumeration result, not an atomic snapshot.
+
+Both compact named records and `--json` preserve scalar types and escape unusual
+names losslessly. Parse compact values as JSON scalars, never by splitting on
+spaces or `=`. Every handled response ends with one LF and leaves stderr empty.
+Exit codes are 0 for success, 2 for invalid arguments, 3 for unavailable input,
+and 1 for capacity or internal failure. The encoded response cap is 1 MiB;
+errors replace the whole response. See the [v0 contract](docs/axi-contract.md)
+for exact fields, error codes, byte limits, and ordering.
+
+## Copy/paste offline demo
+
+In a POSIX shell from the repository root, this creates only synthetic data in
+ignored scratch space and removes the fixture on exit:
+
+```sh
+(
+  set -eu
+  mkdir -p .tmp
+  demo="$(mktemp -d "$PWD/.tmp/fs-axi-demo.XXXXXX")"
+  trap 'rm -rf "$demo"' EXIT
+  mkdir "$demo/inventory" "$demo/outside" "$demo/inventory/sub"
+  printf abc > "$demo/inventory/a.txt"
+  : > "$demo/inventory/notes = \"x\".txt"
+  ln -s ../outside "$demo/inventory/link"
+  node examples/fs-axi/bin/fs-axi.js
+  node examples/fs-axi/bin/fs-axi.js list "$demo/inventory"
+  node examples/fs-axi/bin/fs-axi.js list "$demo/inventory" --limit 2 --json
+)
+```
+
+The full listing has four entries: `a.txt` (file, 3 bytes), `link` (symlink,
+null bytes), `notes = "x".txt` (file, 0 bytes), and `sub` (directory, null bytes).
+The bounded JSON listing reports `limit: 2`, `total: 4`, `returned: 2`, and
+`truncated: true`. An explicit absolute directory works from any cwd when the
+entry point is also given by its absolute path.
+
+The suite creates and cleans temporary fixtures under `.tmp/`, spawns the real
+CLI, and tests both output modes, errors and bounds. Test-only Node preloads
+inject permission failures, races and synthetic capacity cases; production has
+no injection options. Raw invalid-byte filenames are POSIX-only and that case
+is explicitly skipped on Windows. The demo also requires POSIX symlinks; symlink
+creation in tests requires filesystem support and permissions. No broad
+cross-platform certification is implied.
 
 ## License
 

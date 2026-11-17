@@ -2,7 +2,8 @@
 
 - Axify is a convention plus starter repository; see README.md for the local roadmap.
 - docs/axi-contract.md is the proposed v0 authoring contract and exact example source.
-  It describes future behavior, not an implemented CLI or verified external packages.
+  examples/fs-axi implements the offline reference; npm test runs its built-in Node suite.
+  External package conformance remains unverified.
 - Keep public fixtures and examples synthetic. The first reference workflow is an
   offline, nonrecursive local-directory inventory.
 

@@ -1,14 +1,15 @@
 # Axi contract v0 (proposed)
 
-This is an authoring contract for axify's future reference and starter, not a
-description of existing external packages. W1 ships documentation only. The
+This is an authoring contract implemented by axify's local offline reference;
+the standalone starter remains future work. It does not describe existing
+external packages. W1 shipped documentation only; W2–W4 add the reference. The
 provisional `fs-axi` name denotes a local example, not a reserved package name.
 The version identifier is the integer `0`; incompatible changes require a new
 version. No cross-version negotiation or compatibility guarantee is proposed.
 
 ## Invocation and discovery
 
-Future direct entry point: `node examples/fs-axi/bin/fs-axi.js`. Below, `fs-axi`
+Direct entry point (Node.js 22+): `node examples/fs-axi/bin/fs-axi.js`. Below, `fs-axi`
 is shorthand for that invocation, not a globally installed command.
 
 ```text
@@ -176,7 +177,7 @@ Increasing `--limit` only reaches 500 and may still hit the byte ceiling.
 
 ## Six exact acceptance examples
 
-These are synthetic future acceptance targets, not captured executions. Each
+These are synthetic acceptance examples, not captured executions. Each
 stdout block includes exactly one LF after its last line. Stderr is **empty**
 in every example, in both modes. Commands are shown separately from stdout.
 Fixtures use a synthetic POSIX cwd `/fixture`; paths below are not real user
@@ -299,6 +300,7 @@ entry name="line\nnext\t\\雪,|=:" type="file" bytes=0
 | Compact and explicitly bounded | Examples 2, 5, 6 expose source, limit, total, returned and truncated, including zero and truncation. At most 500 entries and 1 MiB per response; failures replace rather than clip data. |
 | Data, not advice | Discovery lists callable syntax, and all six examples report facts or stable failure classifications. No recommended action, routing decision, or interpretation of file contents is emitted. |
 
-W2–W4 must turn these targets into an offline CLI and behavioral tests. W1 has
-no executable behavior to test; checking these serialized examples validates
-the document's consistency, not an implementation or an external package.
+The local reference and its offline behavioral suite now implement W2–W4;
+see the README for `npm test` and a copy/paste demo. Checking these serialized
+examples alone validates the document's consistency, not an implementation or
+an external package.

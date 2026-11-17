@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -19,7 +18,9 @@ function run(args = [], options = {}) {
   return result;
 }
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-axi-'));
+  const scratch = path.resolve(__dirname, '../../../.tmp');
+  fs.mkdirSync(scratch, { recursive: true });
+  const root = fs.mkdtempSync(path.join(scratch, 'fs-axi-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -226,7 +227,7 @@ test('unpaired surrogate input is E_ENCODING before filesystem access', (t) => {
 test('capacity failures cover name size, byte size, and encoded output in both modes', (t) => {
   const source = fixture(t);
   for (const json of [[], ['--json']]) {
-    for (const mode of ['long-name', 'unsafe-size', 'negative-size', 'response-size']) {
+    for (const mode of ['long-name', 'unsafe-total', 'unsafe-size', 'negative-size', 'response-size']) {
       expectError(['list', source, '--limit', '500', ...json], 'E_CAPACITY', 1, null, 'list', fault(source, mode));
     }
   }
