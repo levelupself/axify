@@ -87,8 +87,16 @@ function parse(args) {
   if (operands.length > 2) issues.push({ index: operands[2].index, target: null });
   if (first !== 'list' && limitIndex !== undefined) issues.push({ index: limitIndex, target: '--limit' });
   if (first === 'list' && operands.length < 2 && !options.has('--help')) issues.push({ index: Infinity, target: null });
+  let source;
+  const directory = operands[1];
+  if (directory) {
+    try { source = sourcePath(directory.token); }
+    catch (error) {
+      issues.push({ index: directory.index, code: error instanceof Failure ? error.code : 'E_INTERNAL', target: null });
+    }
+  }
   issues.sort((a, b) => a.index - b.index);
-  return { json: options.has('--json'), help: options.has('--help'), command, directory: operands[1]?.token, limit, issue: issues[0] };
+  return { json: options.has('--json'), help: options.has('--help'), command, source, limit, issue: issues[0] };
 }
 
 function sourcePath(directory) {
@@ -143,10 +151,9 @@ function main(args) {
   let command = parsed.command;
   let response;
   try {
-    if (parsed.issue) fail('E_USAGE', parsed.issue.target);
-    const source = parsed.directory === undefined ? undefined : sourcePath(parsed.directory);
+    if (parsed.issue) fail(parsed.issue.code ?? 'E_USAGE', parsed.issue.target);
     if (parsed.help || command === 'discover') command = 'discover';
-    const data = command === 'discover' ? discovery : inventory(source, parsed.limit);
+    const data = command === 'discover' ? discovery : inventory(parsed.source, parsed.limit);
     response = { v: 0, tool: 'fs-axi', command, ok: true, data, error: null };
   } catch (error) {
     response = failureResponse(command, error instanceof Failure ? error : new Failure('E_INTERNAL'));
