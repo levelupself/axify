@@ -181,6 +181,27 @@ function fault(root, mode) {
   };
 }
 
+test('directory validation errors compete with limit errors in token order', (t) => {
+  const root = fixture(t);
+  const cases = [
+    { directory: '', code: 'E_USAGE', status: 2 },
+    { directory: 'x'.repeat(4097), code: 'E_USAGE', status: 2 },
+    // The token fits the byte limit, but resolving against cwd exceeds it.
+    { directory: 'x'.repeat(4096), code: 'E_USAGE', status: 2 },
+    { directory: root, code: 'E_ENCODING', status: 3, mode: 'surrogate-input' },
+    { directory: root, code: 'E_ENCODING', status: 3, mode: 'surrogate-source' },
+  ];
+  for (const { directory, code, status, mode } of cases) {
+    const options = { cwd: root, ...(mode ? fault(root, mode) : fault(root, 'no-io')) };
+    for (const json of [[], ['--json']]) {
+      for (const help of [[], ['--help']]) {
+        expectError(['list', directory, '--limit', '0', ...help, ...json], code, status, null, 'list', options);
+        expectError(['list', '--limit', '0', directory, ...help, ...json], 'E_USAGE', 2, '--limit', 'list', options);
+      }
+    }
+  }
+});
+
 test('discovery and invalid invocations never access the filesystem', (t) => {
   const root = fixture(t);
   const options = fault(root, 'no-io');

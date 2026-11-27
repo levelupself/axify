@@ -10,7 +10,13 @@ function denied(code = 'EACCES') { throw Object.assign(new Error('injected read 
 function stat(type, size = 0n) {
   return { size, isFile: () => type === 'file', isDirectory: () => type === 'directory', isSymbolicLink: () => type === 'symlink' };
 }
-if (mode === 'surrogate-input') process.argv[3] = '\ud800';
+if (mode === 'surrogate-input') process.argv[process.argv.indexOf(root, 2)] = '\ud800';
+if (mode === 'surrogate-source') {
+  const originalResolve = path.resolve;
+  path.resolve = function (...args) {
+    return args.length === 1 && args[0] === root ? '\ud800' : originalResolve(...args);
+  };
+}
 fs.lstatSync = function (target, options) {
   if (mode === 'no-io') process.exit(99);
   if (target === root && mode === 'initial-denied') denied();
