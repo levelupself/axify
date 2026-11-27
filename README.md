@@ -33,9 +33,8 @@ Their availability, behavior, and conformance to v0 have not been verified here.
 ## Purpose and local roadmap
 
 **Axify is a convention plus starter repository.** It documents the convention,
-then will demonstrate it with a small offline reference CLI and a standalone
-starter. The offline reference now runs locally; the standalone starter is future
-work. Independent tools remain in their current homes.
+and demonstrates it with a small offline reference CLI. The standalone starter
+is future work. Independent tools remain in their current homes.
 
 1. **W1 — proposed convention v0:** [invocation, wire formats, errors, bounds,
    and six exact examples](docs/axi-contract.md).
@@ -55,9 +54,9 @@ Run from the repository root:
 ```sh
 node examples/fs-axi/bin/fs-axi.js
 node examples/fs-axi/bin/fs-axi.js --help --json
-npm test
+nice -n 19 npm test
 # Equivalent without npm; test files and spawned CLIs run sequentially:
-node --test --test-concurrency=1 examples/fs-axi/test/*.test.js
+nice -n 19 node --test --test-concurrency=1 examples/fs-axi/test/*.test.js
 ```
 
 The CLI reports immediate names, entry types and regular-file byte sizes. It
